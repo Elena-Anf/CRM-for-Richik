@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Записи — Grooming CRM{% endblock %}
 {% block content %}
-<h1 class="text-2xl font-bold mb-6">Записи</h1>
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold">Записи</h1>
+  <button onclick="syncFromCalendar()" class="btn btn-primary btn-sm" id="sync-btn">
+    ⟳ Обновить из календаря
+  </button>
+</div>
+
+<div id="sync-result" class="mb-4 hidden"></div>
 
 <div id="finance-stats"
      hx-get="/api/appointments/finance/stats"
@@ -22,6 +29,7 @@
   <table class="min-w-full divide-y divide-gray-200">
     <thead class="bg-gray-50">
       <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Calendar ID</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Клиент</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Питомец</th>
         <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Мастер</th>
@@ -35,6 +43,7 @@
     <tbody>
       {% for a in appointments %}
       <tr id="apt-row-{{ a.id }}">
+        <td class="px-4 py-3 text-xs text-gray-500 font-mono">{% if a.google_event_id %}{{ a.google_event_id[:7] }}…{% else %}—{% endif %}</td>
         <td class="px-4 py-3">{{ a.client.name }}<br><span class="text-xs text-gray-500">{{ a.client.phone }}</span></td>
         <td class="px-4 py-3">{{ a.pet.name }}<br><span class="text-xs text-gray-500">{{ a.pet.breed or a.pet.species }}</span></td>
         <td class="px-4 py-3">{{ a.master.name }}</td>
@@ -282,6 +291,37 @@
       body: JSON.stringify({status}),
     });
     location.reload();
+  }
+
+  async function syncFromCalendar() {
+    const btn = document.getElementById('sync-btn');
+    const resultDiv = document.getElementById('sync-result');
+    btn.disabled = true;
+    btn.textContent = '⟳ Синхронизация...';
+    resultDiv.className = 'mb-4';
+    resultDiv.textContent = '';
+    try {
+      const resp = await fetch('/api/appointments/sync-from-calendar', { method: 'POST' });
+      const data = await resp.json();
+      if (resp.ok) {
+        const s = data.stats;
+        resultDiv.className = 'mb-4 notify notify-success';
+        resultDiv.textContent = `Синхронизация: создано ${s.created}, обновлено ${s.updated}, отменено ${s.cancelled}`;
+        if (s.errors && s.errors.length) {
+          resultDiv.textContent += '. Ошибки: ' + s.errors.join('; ');
+        }
+        setTimeout(() => location.reload(), 2000);
+      } else {
+        resultDiv.className = 'mb-4 notify notify-error';
+        resultDiv.textContent = data.detail || 'Ошибка синхронизации';
+      }
+    } catch(e) {
+      resultDiv.className = 'mb-4 notify notify-error';
+      resultDiv.textContent = 'Ошибка соединения';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⟳ Обновить из календаря';
+    }
   }
 
   async function deleteAppointment(id) {

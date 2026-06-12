@@ -17,7 +17,7 @@ from app.models.pet import Pet
 from app.models.master import Master
 from app.models.service import Service
 from app.schemas.appointment import AppointmentCreate, AppointmentResponse, AppointmentStatusUpdate, AppointmentReschedule, AppointmentUpdate
-from app.services.google_calendar import create_event, update_event, delete_event
+from app.services.google_calendar import create_event, update_event, delete_event, _get_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -496,3 +496,330 @@ async def delete_appointment(appointment_id: int, db: AsyncSession = Depends(get
 
     await db.delete(a)
     await db.commit()
+
+
+@router.post("/sync-from-calendar")
+async def sync_from_calendar(db: AsyncSession = Depends(get_db)):
+    stats = {"created": 0, "cancelled": 0, "updated": 0, "errors": []}
+
+    masters = await db.execute(
+        select(Master).where(
+            Master.is_active == True,
+            Master.google_calendar_id != None,
+            Master.google_calendar_id != "",
+        )
+    )
+    masters = masters.scalars().all()
+    if not masters:
+        return {"message": "Нет мастеров с подключённым календарём", "stats": stats}
+
+    all_appts = await db.execute(
+        select(Appointment)
+        .options(
+            joinedload(Appointment.client),
+            joinedload(Appointment.pet),
+            joinedload(Appointment.service),
+            joinedload(Appointment.master),
+        )
+    )
+    all_appts = all_appts.unique().scalars().all()
+    if not all_appts:
+        return {"message": "Нет записей для сверки", "stats": stats}
+
+    raw_min = min(a.start_time for a in all_appts) - datetime.timedelta(days=3)
+    raw_max = max(a.start_time for a in all_appts) + datetime.timedelta(days=3)
+
+    logger.info("SYNC date range raw: %s — %s", raw_min, raw_max)
+
+    service = _get_service()
+    if not service:
+        raise HTTPException(400, "Google Calendar service not configured")
+
+    all_events = []
+    for m in masters:
+        try:
+            tz_msk = datetime.timezone(datetime.timedelta(hours=3))
+            if raw_min.tzinfo is None:
+                time_min = raw_min.replace(tzinfo=tz_msk)
+            else:
+                time_min = raw_min
+            if raw_max.tzinfo is None:
+                time_max = raw_max.replace(tzinfo=tz_msk)
+            else:
+                time_max = raw_max
+
+            time_min_str = time_min.isoformat()
+            time_max_str = time_max.isoformat()
+            logger.info("SYNC fetching master=%s calendar=%s from=%s to=%s",
+                        m.name, m.google_calendar_id[:20], time_min_str, time_max_str)
+
+            events_result = service.events().list(
+                calendarId=m.google_calendar_id,
+                timeMin=time_min_str,
+                timeMax=time_max_str,
+                singleEvents=True,
+                orderBy="startTime",
+            ).execute()
+            items = events_result.get("items", [])
+            logger.info("SYNC master=%s got %d events", m.name, len(items))
+            for ev in items:
+                ev["_master_id"] = m.id
+                logger.info("SYNC event id=%s summary=%s start=%s",
+                            ev.get("id","")[:12], ev.get("summary",""),
+                            ev.get("start",{}).get("dateTime",""))
+            all_events.extend(items)
+        except Exception as e:
+            logger.error("SYNC error for master %s: %s", m.name, e)
+            stats["errors"].append(f"Master {m.name}: {e}")
+
+    if not all_events:
+        return {"message": "Нет событий в календарях за выбранный период", "stats": stats}
+
+    # Build lookup: by google_event_id first (exact), then by composite key
+    appts_by_event_id = {}
+    grouped_appts = {}
+    for a in all_appts:
+        if a.status == "cancelled":
+            continue
+        if a.google_event_id:
+            appts_by_event_id[a.google_event_id] = a
+        key = _appointment_key(a)
+        grouped_appts.setdefault(a.master_id, {}).setdefault(key, []).append(a)
+
+    for mid, keys in grouped_appts.items():
+        logger.info("SYNC master %s CRM keys: %s", mid, list(keys.keys()))
+
+    matched_crm_ids = set()
+
+    for ev in all_events:
+        parsed = _parse_event(ev)
+        if not parsed:
+            continue
+
+        master_id = ev["_master_id"]
+        start = _parse_event_time(ev.get("start", {}).get("dateTime", ""))
+        end = _parse_event_time(ev.get("end", {}).get("dateTime", ""))
+        if not start or not end:
+            continue
+        duration_minutes = int((end - start).total_seconds() / 60)
+
+        # Match by google_event_id first (exact match)
+        match = appts_by_event_id.get(ev.get("id"))
+        if not match:
+            # Fallback to composite key matching
+            ev_key = _make_key(parsed["client_name"], parsed["client_phone"], parsed["pet_name"], parsed["pet_breed"])
+            ev_key_no_breed = _make_key(parsed["client_name"], parsed["client_phone"], parsed["pet_name"], "")
+
+            logger.info("SYNC event[%s] master=%s key=%s phone=%s pet=%s breed=%s",
+                        ev.get("id","")[:8], master_id, ev_key,
+                        parsed.get("client_phone"), parsed.get("pet_name"), parsed.get("pet_breed"))
+
+            candidates = grouped_appts.get(master_id, {}).get(ev_key, []) or grouped_appts.get(master_id, {}).get(ev_key_no_breed, [])
+
+            if not candidates:
+                logger.info("SYNC no match for key=%s. Available keys for master %s: %s",
+                            ev_key, master_id, list(grouped_appts.get(master_id, {}).keys()))
+            match = candidates[0] if candidates else None
+
+        if match:
+            a = match
+            matched_crm_ids.add(a.id)
+            needs_update = False
+
+            if parsed.get("service_name"):
+                svc = await _find_service(db, parsed["service_name"])
+                if svc and svc.id != a.service_id:
+                    a.service_id = svc.id
+                    a.price = svc.price
+                    master_obj = await db.get(Master, a.master_id)
+                    if master_obj:
+                        a.master_earnings = round(svc.price * master_obj.commission_percent / 100, 2)
+                    needs_update = True
+
+            time_diff = abs((a.start_time.replace(tzinfo=None) - start.replace(tzinfo=None)).total_seconds())
+            if time_diff > 60:
+                a.start_time = start
+                a.end_time = start + datetime.timedelta(minutes=duration_minutes)
+                needs_update = True
+
+            if needs_update:
+                if a.google_event_id:
+                    await update_event(db, a)
+                else:
+                    a.google_event_id = ev.get("id")
+                stats["updated"] += 1
+        else:
+            svc = None
+            if parsed.get("service_name"):
+                svc = await _find_service(db, parsed["service_name"])
+            if not svc:
+                svc = await _find_service(db, "Стрижка")
+            if not svc:
+                svcs = await db.execute(select(Service).where(Service.is_active == True))
+                svc = svcs.scalars().first()
+            if not svc:
+                stats["errors"].append("Нет доступных услуг для создания записи")
+                continue
+
+            client = await db.execute(
+                select(Client).where(
+                    Client.name == parsed["client_name"],
+                    Client.phone == parsed["client_phone"],
+                )
+            )
+            client = client.scalar_one_or_none()
+            if not client:
+                client = Client(name=parsed["client_name"], phone=parsed["client_phone"])
+                db.add(client)
+                await db.flush()
+
+            pets = await db.execute(
+                select(Pet).where(
+                    Pet.client_id == client.id,
+                    Pet.name == parsed["pet_name"],
+                )
+            )
+            pet = pets.scalars().first()
+            if not pet:
+                pet = Pet(
+                    client_id=client.id,
+                    name=parsed["pet_name"],
+                    species=parsed.get("pet_species", "dog"),
+                    breed=parsed["pet_breed"],
+                )
+                db.add(pet)
+                await db.flush()
+
+            master_obj = await db.get(Master, master_id)
+            commission = master_obj.commission_percent if master_obj else 40
+            master_earnings = round(svc.price * commission / 100, 2)
+
+            appointment = Appointment(
+                client_id=client.id,
+                pet_id=pet.id,
+                master_id=master_id,
+                service_id=svc.id,
+                start_time=start,
+                end_time=end,
+                status="pending",
+                price=svc.price,
+                cost_price=svc.cost_price,
+                master_earnings=master_earnings,
+                google_event_id=ev.get("id"),
+            )
+            db.add(appointment)
+            stats["created"] += 1
+
+    not_matched = [
+        a for a in all_appts
+        if a.status != "cancelled"
+        and a.id not in matched_crm_ids
+        and a.master_id in {m.id for m in masters}
+    ]
+    for a in not_matched:
+        a.status = "cancelled"
+        if a.google_event_id:
+            await delete_event(db, a)
+            a.google_event_id = None
+        stats["cancelled"] += 1
+
+    await db.commit()
+    return {"message": "Синхронизация завершена", "stats": stats}
+
+
+def _appointment_key(a: Appointment) -> str:
+    name = (a.client.name or "").strip().lower()
+    phone = (a.client.phone or "").strip().lower()
+    pet_name = (a.pet.name or "").strip().lower()
+    breed = (a.pet.breed or "").strip().lower()
+    return _make_key(name, phone, pet_name, breed)
+
+
+def _make_key(name: str, phone: str, pet_name: str, breed: str) -> str:
+    return f"{name}|{phone}|{pet_name}|{breed}"
+
+
+def _parse_event(ev: dict) -> Optional[dict]:
+    desc = ev.get("description", "") or ""
+    summary = ev.get("summary", "") or ""
+
+    result = {}
+
+    if "Клиент:" in desc:
+        for line in desc.split("\n"):
+            line = line.strip()
+            if line.startswith("Клиент:"):
+                result["client_name"] = line.split(":", 1)[1].strip()
+            elif line.startswith("Телефон:"):
+                result["client_phone"] = line.split(":", 1)[1].strip()
+            elif line.startswith("Питомец:"):
+                pet_part = line.split(":", 1)[1].strip()
+                if "(" in pet_part:
+                    result["pet_name"] = pet_part.split("(")[0].strip()
+                    breed_species = pet_part.split("(")[1].rstrip(")")
+                    result["pet_breed"] = breed_species
+                    result["pet_species"] = breed_species
+                else:
+                    result["pet_name"] = pet_part
+            elif line.startswith("Услуга:"):
+                svc_part = line.split(":", 1)[1].strip()
+                if "—" in svc_part:
+                    result["service_name"] = svc_part.split("—")[0].strip()
+                else:
+                    result["service_name"] = svc_part
+
+    if not result.get("client_name") and "(" in summary and ")" in summary:
+        parts = summary.split("(")
+        if len(parts) >= 2:
+            name_part = parts[-1].rstrip(")")
+            result["client_name"] = name_part.strip()
+
+    if not result.get("service_name") and "—" in summary:
+        result["service_name"] = summary.split("—")[0].strip()
+
+    if not result.get("pet_name") and "—" in summary and "(" in summary:
+        between = summary.split("—", 1)[1].strip()
+        if "(" in between:
+            result["pet_name"] = between.split("(")[0].strip()
+
+    if not result.get("client_name"):
+        return None
+
+    result.setdefault("client_phone", "")
+    result.setdefault("pet_name", "")
+    result.setdefault("pet_breed", "")
+    result.setdefault("pet_species", "dog")
+    result.setdefault("service_name", "")
+    return result
+
+
+def _parse_event_time(t_str: str) -> Optional[datetime.datetime]:
+    if not t_str:
+        return None
+    t_str = t_str.replace("Z", "+00:00")
+    for sep in ["+", "-"]:
+        if sep in t_str:
+            parts = t_str.rsplit(sep, 1)
+            if len(parts) == 2 and ":" not in parts[1]:
+                t_str = parts[0] + sep + parts[1][:2] + ":" + parts[1][2:]
+    for fmt in ["%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f"]:
+        try:
+            dt = datetime.datetime.strptime(t_str, fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+            return dt
+        except ValueError:
+            continue
+    return None
+
+
+async def _find_service(db: AsyncSession, name: str) -> Optional[Service]:
+    name = name.strip().lower()
+    svcs = await db.execute(select(Service).where(Service.is_active == True))
+    for s in svcs.scalars().all():
+        if s.name.strip().lower() == name:
+            return s
+    for s in svcs.scalars().all():
+        if name in s.name.strip().lower():
+            return s
+    return None

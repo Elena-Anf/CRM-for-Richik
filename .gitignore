@@ -8,3 +8,6 @@ venv/
 *.sqlite3
 .DS_Store
 service-account.json
+*.log
+*.err
+test_*.py
