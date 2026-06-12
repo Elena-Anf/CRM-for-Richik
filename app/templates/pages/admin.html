@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}Записи — Grooming CRM{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Записи</h1>
+
+<div id="finance-stats"
+     hx-get="/api/appointments/finance/stats"
+     hx-trigger="load"
+     class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+  <div class="bg-white rounded-lg shadow p-4">Загрузка...</div>
+</div>
+
+<div class="mb-4 flex flex-wrap gap-2">
+  <a href="/admin" class="px-3 py-1 rounded bg-gray-200 text-gray-700 hover:bg-gray-300">Все</a>
+  <a href="/admin?status=pending" class="px-3 py-1 rounded bg-yellow-100 text-yellow-800 hover:bg-yellow-200">Ожидание</a>
+  <a href="/admin?status=confirmed" class="px-3 py-1 rounded bg-green-100 text-green-800 hover:bg-green-200">Подтверждено</a>
+  <a href="/admin?status=completed" class="px-3 py-1 rounded bg-blue-100 text-blue-800 hover:bg-blue-200">Оплачено</a>
+  <a href="/admin?status=cancelled" class="px-3 py-1 rounded bg-red-100 text-red-800 hover:bg-red-200">Отменено</a>
+</div>
+
+<div class="bg-white rounded-lg shadow overflow-x-auto">
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Клиент</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Питомец</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Мастер</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Услуга</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Дата</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Сумма</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Статус</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in appointments %}
+      <tr id="apt-row-{{ a.id }}">
+        <td class="px-4 py-3">{{ a.client.name }}<br><span class="text-xs text-gray-500">{{ a.client.phone }}</span></td>
+        <td class="px-4 py-3">{{ a.pet.name }}<br><span class="text-xs text-gray-500">{{ a.pet.breed or a.pet.species }}</span></td>
+        <td class="px-4 py-3">{{ a.master.name }}</td>
+        <td class="px-4 py-3">{{ a.service.name }}<br><span class="text-xs text-gray-500">{{ a.service.duration_minutes }}мин</span></td>
+        <td class="px-4 py-3 whitespace-nowrap">{{ a.start_time.strftime('%d.%m.%Y') }}<br><span class="text-xs text-gray-500">{{ a.start_time.strftime('%H:%M') }}</span></td>
+        {% set p = a.price or a.service.price %}
+        {% set c = a.cost_price or a.service.cost_price %}
+        {% set e = a.master_earnings or 0 %}
+        {% set pr = (p - c - e)|round(2) %}
+        <td class="px-4 py-3 whitespace-nowrap text-xs">
+          <span title="Цена">{{ p }}₽</span>
+          <span class="text-gray-400 mx-0.5">|</span>
+          <span title="Себестоимость" class="text-gray-500">{{ c }}₽</span>
+          <span class="text-gray-400 mx-0.5">|</span>
+          <span title="Мастеру" class="text-gray-500">{{ e }}₽</span>
+          <span class="text-gray-400 mx-0.5">|</span>
+          <span title="Прибыль" class="{% if pr > 0 %}text-emerald-600{% else %}text-red-500{% endif %} font-semibold">{{ pr }}₽</span>
+        </td>
+        <td class="px-4 py-3">
+          <span class="status-badge status-{{ a.status }}">
+            {% if a.status == 'pending' %}Ожидание{% elif a.status == 'confirmed' %}Подтверждено{% elif a.status == 'completed' %}Оплачено{% elif a.status == 'cancelled' %}Отменено{% endif %}
+          </span>
+        </td>
+        <td class="px-4 py-3 whitespace-nowrap">
+          <button onclick="editAppointment({{ a.id }})" class="text-indigo-600 hover:text-indigo-800 text-sm mr-2">✎</button>
+          <button onclick="deleteAppointment({{ a.id }})" class="text-red-600 hover:text-red-800 text-sm">✕</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Modal for editing appointment -->
+<div id="edit-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50" onclick="if(event.target===this)closeModal()">
+  <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onclick="event.stopPropagation()">
+    <h2 class="text-lg font-semibold mb-4">Редактировать запись</h2>
+    <form id="edit-form" class="space-y-3">
+      <input type="hidden" id="edit-id">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-500">Имя клиента</label>
+          <input type="text" id="edit-client-name" class="w-full rounded border-gray-300 p-2 text-sm">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Телефон</label>
+          <input type="text" id="edit-client-phone" class="w-full rounded border-gray-300 p-2 text-sm">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-500">Имя питомца</label>
+          <input type="text" id="edit-pet-name" class="w-full rounded border-gray-300 p-2 text-sm">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Вид</label>
+          <select id="edit-pet-species" class="w-full rounded border-gray-300 p-2 text-sm">
+            <option value="dog">Собака</option>
+            <option value="cat">Кошка</option>
+            <option value="other">Другое</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="text-xs text-gray-500">Порода</label>
+        <input type="text" id="edit-pet-breed" class="w-full rounded border-gray-300 p-2 text-sm">
+      </div>
+      <div>
+        <label class="text-xs text-gray-500">Дата и время</label>
+        <input type="datetime-local" id="edit-start-time" class="w-full rounded border-gray-300 p-2 text-sm" onchange="editCalcEndTime()">
+      </div>
+      <div>
+        <label class="text-xs text-gray-500">Длительность</label>
+        <select id="edit-duration" class="w-full rounded border-gray-300 p-2 text-sm" onchange="editCalcEndTime()">
+          <option value="30">30 мин</option>
+          <option value="60">1 ч</option>
+          <option value="90">1 ч 30 мин</option>
+          <option value="120">2 ч</option>
+          <option value="150">2 ч 30 мин</option>
+          <option value="180">3 ч</option>
+          <option value="240">4 ч</option>
+        </select>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-500">Мастер</label>
+          <select id="edit-master-id" class="w-full rounded border-gray-300 p-2 text-sm" onchange="editCalcFinance()"></select>
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Услуга</label>
+          <select id="edit-service-id" class="w-full rounded border-gray-300 p-2 text-sm" onchange="editCalcFinance()"></select>
+        </div>
+      </div>
+      <div class="grid grid-cols-4 gap-2">
+        <div>
+          <label class="text-xs text-gray-500">Цена (₽)</label>
+          <input type="number" id="edit-price" class="w-full rounded border-gray-300 p-2 text-sm" step="1" min="0" oninput="editCalcFinance()">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Себестоимость (₽)</label>
+          <input type="number" id="edit-cost" class="w-full rounded border-gray-300 p-2 text-sm" step="1" min="0">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Мастеру (₽)</label>
+          <input type="text" id="edit-earnings" class="w-full rounded border-gray-300 p-2 text-sm bg-gray-50" readonly>
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Прибыль (₽)</label>
+          <input type="text" id="edit-profit" class="w-full rounded border-gray-300 p-2 text-sm bg-gray-50" readonly>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-500">Статус</label>
+          <select id="edit-status" class="w-full rounded border-gray-300 p-2 text-sm">
+            <option value="pending">Ожидание</option>
+            <option value="confirmed">Подтверждено</option>
+            <option value="completed">Оплачено</option>
+            <option value="cancelled">Отменено</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="text-xs text-gray-500">Заметки</label>
+        <textarea id="edit-notes" rows="2" class="w-full rounded border-gray-300 p-2 text-sm"></textarea>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm">Сохранить</button>
+        <button type="button" onclick="closeModal()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300 text-sm">Отмена</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  // Status labels
+  const statusLabels = {pending:'Ожидание', confirmed:'Подтверждено', completed:'Оплачено', cancelled:'Отменено'};
+
+  // Load masters & services for edit modal
+  let mastersList = [], servicesList = [];
+  let mastersLoaded = false, servicesLoaded = false;
+  fetch('/api/masters/').then(r=>r.json()).then(d=>{mastersList=d; mastersLoaded=true});
+  fetch('/api/services/').then(r=>r.json()).then(d=>{servicesList=d; servicesLoaded=true});
+
+  function populateSelect(selId, list, valField, labelField, selectedVal) {
+    const sel = document.getElementById(selId);
+    sel.innerHTML = list.map(item =>
+      `<option value="${item[valField]}" ${item[valField]==selectedVal?'selected':''}>${item[labelField]}</option>`
+    ).join('');
+  }
+
+  function editCalcEndTime() {
+    const start = document.getElementById('edit-start-time').value;
+    const dur = parseInt(document.getElementById('edit-duration').value);
+    if (start && dur) {
+      const end = new Date(new Date(start).getTime() + dur * 60000);
+      const pad = n => String(n).padStart(2, '0');
+      document.getElementById('edit-start-time').setAttribute('data-end',
+        `${end.getFullYear()}-${pad(end.getMonth()+1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`
+      );
+    }
+  }
+
+  function editCalcFinance() {
+    const price = parseFloat(document.getElementById('edit-price').value) || 0;
+    const cost = parseFloat(document.getElementById('edit-cost').value) || 0;
+    const mid = parseInt(document.getElementById('edit-master-id').value);
+    const m = mastersList.find(x => x.id === mid);
+    const commission = m ? parseFloat(m.commission_percent) : 0;
+    const earnings = Math.round(price * commission / 100 * 100) / 100;
+    const profit = Math.round((price - cost - earnings) * 100) / 100;
+    document.getElementById('edit-earnings').value = earnings + ' ₽';
+    document.getElementById('edit-profit').value = profit + ' ₽';
+  }
+
+  // Edit appointment
+  async function editAppointment(id) {
+    const resp = await fetch('/api/appointments/' + id);
+    const a = await resp.json();
+    document.getElementById('edit-id').value = a.id;
+    document.getElementById('edit-client-name').value = a.client_name;
+    document.getElementById('edit-client-phone').value = a.client_phone;
+    document.getElementById('edit-pet-name').value = a.pet_name;
+    document.getElementById('edit-pet-species').value = a.pet_species;
+    document.getElementById('edit-pet-breed').value = a.pet_breed || '';
+    document.getElementById('edit-start-time').value = a.start_time.slice(0,16);
+    const dur = Math.round((new Date(a.end_time) - new Date(a.start_time)) / 60000);
+    const durSel = document.getElementById('edit-duration');
+    const opt = Array.from(durSel.options).find(o => parseInt(o.value) === dur);
+    if (opt) { opt.selected = true; } else { durSel.value = dur; }
+    document.getElementById('edit-price').value = a.price;
+    document.getElementById('edit-cost').value = a.cost_price || 0;
+    document.getElementById('edit-status').value = a.status;
+    document.getElementById('edit-notes').value = a.notes || '';
+    if (!mastersLoaded || !servicesLoaded) {
+      await Promise.all([
+        mastersLoaded ? Promise.resolve() : new Promise(r => { let i = setInterval(() => { if (mastersLoaded) { clearInterval(i); r(); } }, 50); }),
+        servicesLoaded ? Promise.resolve() : new Promise(r => { let i = setInterval(() => { if (servicesLoaded) { clearInterval(i); r(); } }, 50); }),
+      ]);
+    }
+    populateSelect('edit-master-id', mastersList, 'id', 'name', a.master_id);
+    populateSelect('edit-service-id', servicesList, 'id', 'name', a.service_id);
+    document.getElementById('edit-modal').classList.remove('hidden');
+    setTimeout(editCalcFinance, 100);
+  }
+
+  function closeModal() { document.getElementById('edit-modal').classList.add('hidden'); }
+
+  document.getElementById('edit-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-id').value;
+    const body = {
+      client_name: document.getElementById('edit-client-name').value,
+      client_phone: document.getElementById('edit-client-phone').value,
+      pet_name: document.getElementById('edit-pet-name').value,
+      pet_species: document.getElementById('edit-pet-species').value,
+      pet_breed: document.getElementById('edit-pet-breed').value || '',
+      start_time: document.getElementById('edit-start-time').value + ':00',
+      duration_minutes: parseInt(document.getElementById('edit-duration').value),
+      master_id: parseInt(document.getElementById('edit-master-id').value),
+      service_id: parseInt(document.getElementById('edit-service-id').value),
+      price: parseFloat(document.getElementById('edit-price').value),
+      cost_price: parseFloat(document.getElementById('edit-cost').value),
+      status: document.getElementById('edit-status').value,
+      notes: document.getElementById('edit-notes').value || '',
+    };
+    const resp = await fetch('/api/appointments/' + id + '/edit', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (resp.ok) {
+      closeModal();
+      location.reload();
+    } else {
+      alert('Ошибка: ' + (await resp.json()).detail);
+    }
+  });
+
+  // Change status (quick action)
+  async function changeStatus(id, status) {
+    await fetch('/api/appointments/' + id + '/status', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status}),
+    });
+    location.reload();
+  }
+
+  async function deleteAppointment(id) {
+    if (!confirm('Удалить запись? Это также удалит событие из Google Календаря.')) return;
+    try {
+      const resp = await fetch('/api/appointments/' + id, { method: 'DELETE' });
+      if (resp.ok) {
+        document.getElementById('apt-row-' + id).remove();
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        alert('Ошибка при удалении: ' + (err.detail || resp.statusText));
+      }
+    } catch(e) {
+      alert('Ошибка соединения при удалении');
+    }
+  }
+</script>
+{% endblock %}

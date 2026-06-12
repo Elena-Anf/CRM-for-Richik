@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block title %}Запись на груминг{% endblock %}
+{% block head %}
+<style>
+  .booking-wrap {
+    max-width: 36rem;
+    margin: 0 auto;
+  }
+  .booking-form {
+    background: rgba(255,255,255,0.9);
+    backdrop-filter: blur(8px);
+    border-radius: 1rem;
+    border: 1px solid rgba(226,232,240,0.5);
+    padding: 1.25rem 1.5rem;
+  }
+  .booking-form .row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.6rem;
+    margin-bottom: 0.6rem;
+  }
+  .booking-form .full {
+    margin-bottom: 0.6rem;
+  }
+  .booking-form label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #78716c;
+    margin-bottom: 0.15rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .booking-form input,
+  .booking-form select,
+  .booking-form textarea {
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 0.45rem 0.7rem;
+    border: 1.5px solid #e7e5e4;
+    border-radius: 0.55rem;
+    outline: none;
+    width: 100%;
+    background: #fafaf9;
+    transition: all 0.2s ease;
+    color: #1c1917;
+  }
+  .booking-form input:focus,
+  .booking-form select:focus,
+  .booking-form textarea:focus {
+    border-color: #a78bfa;
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(167,139,250,0.15);
+  }
+  .booking-form textarea {
+    resize: none;
+    height: 2.4rem;
+  }
+  .booking-form .btn {
+    width: 100%;
+    padding: 0.65rem;
+    font-size: 0.95rem;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="booking-wrap">
+  <h1 style="font-size:1.3rem;font-weight:700;margin-bottom:0.8rem;color:#1c1917;">Запись на груминг</h1>
+  <form id="booking-form" class="booking-form">
+    <div class="row">
+      <div>
+        <label>Ваше имя</label>
+        <input type="text" name="client_name" id="f-name" required>
+      </div>
+      <div>
+        <label>Телефон</label>
+        <input type="tel" name="client_phone" id="f-phone" required>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Питомец</label>
+        <input type="text" name="pet_name" id="f-pet" required>
+      </div>
+      <div>
+        <label>Вид</label>
+        <select name="pet_species" id="pet_species" onchange="loadBreeds()">
+          <option value="dog">Собака</option>
+          <option value="cat">Кошка</option>
+          <option value="other">Другое</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Порода</label>
+        <select name="pet_breed" id="pet_breed">
+          <option value="">Выберите...</option>
+        </select>
+      </div>
+      <div>
+        <label>Мастер</label>
+        <select name="master_id" id="f-master" required>
+          {% for m in masters %}
+          <option value="{{ m.id }}">{{ m.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Услуга</label>
+        <select name="service_id" id="f-service" required onchange="updateDuration()">
+          {% for s in services %}
+          <option value="{{ s.id }}" data-dur="{{ s.duration_minutes }}">{{ s.name }} — {{ s.price }}₽</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Длительность</label>
+        <select name="duration_minutes" id="f-duration">
+          <option value="30">30 мин</option>
+          <option value="60">1 ч</option>
+          <option value="90">1 ч 30 мин</option>
+          <option value="120" selected>2 ч</option>
+          <option value="150">2 ч 30 мин</option>
+          <option value="180">3 ч</option>
+          <option value="240">4 ч</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label>Дата и время</label>
+        <input type="datetime-local" name="start_time" id="f-time" required>
+      </div>
+      <div>
+        <label>Заметки</label>
+        <textarea name="notes" id="f-notes"></textarea>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Записаться</button>
+  </form>
+  <div id="result" style="margin-top:0.6rem;"></div>
+</div>
+
+<script>
+  const TEST = [
+    {name:'Анна', phone:'+7 (999) 123-45-67', pet:'Рекс'},
+    {name:'Мария', phone:'+7 (999) 234-56-78', pet:'Мурка'},
+    {name:'Елена', phone:'+7 (999) 345-67-89', pet:'Бобик'},
+    {name:'Дмитрий', phone:'+7 (999) 456-78-90', pet:'Снежок'},
+    {name:'Ольга', phone:'+7 (999) 567-89-01', pet:'Пушок'},
+    {name:'Сергей', phone:'+7 (999) 678-90-12', pet:'Джек'},
+  ];
+
+  function pad(n) { return String(n).padStart(2,'0'); }
+
+  function setCurrentTime() {
+    const now = new Date();
+    const min = Math.ceil(now.getMinutes() / 30) * 30;
+    now.setMinutes(min, 0, 0);
+    document.getElementById('f-time').value = now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+'T'+pad(now.getHours())+':'+pad(now.getMinutes());
+  }
+
+  function fillRandom() {
+    const t = TEST[Math.floor(Math.random() * TEST.length)];
+    document.getElementById('f-name').value = t.name;
+    document.getElementById('f-phone').value = t.phone;
+    document.getElementById('f-pet').value = t.pet;
+    setCurrentTime();
+    const species = document.getElementById('pet_species');
+    const spIdx = Math.floor(Math.random() * species.options.length);
+    species.selectedIndex = spIdx;
+    setTimeout(() => {
+      const breeds = document.getElementById('pet_breed');
+      if (breeds.options.length > 1) {
+        breeds.selectedIndex = Math.floor(Math.random() * (breeds.options.length - 1)) + 1;
+      }
+    }, 100);
+    document.getElementById('f-master').value = '3';
+    document.getElementById('f-duration').value = '120';
+    const services = document.getElementById('f-service');
+    services.selectedIndex = Math.floor(Math.random() * services.options.length);
+    document.getElementById('f-notes').value = '';
+    setTimeout(updateDuration, 50);
+  }
+
+  function updateDuration() {
+    const sel = document.getElementById('f-service');
+    const dur = sel.options[sel.selectedIndex]?.getAttribute('data-dur');
+    if (dur) {
+      const durSel = document.getElementById('f-duration');
+      for (let opt of durSel.options) {
+        if (parseInt(opt.value) === parseInt(dur)) {
+          opt.selected = true;
+          return;
+        }
+      }
+    }
+  }
+
+  async function loadBreeds() {
+    const species = document.getElementById('pet_species').value;
+    const resp = await fetch('/api/breeds/?species=' + species);
+    const breeds = await resp.json();
+    const sel = document.getElementById('pet_breed');
+    sel.innerHTML = '<option value="">Выберите...</option>' +
+      breeds.map(b => '<option value="' + b.name + '">' + b.name + '</option>').join('');
+  }
+  loadBreeds();
+
+  if (!sessionStorage.getItem('booked')) {
+    fillRandom();
+  } else {
+    setTimeout(updateDuration, 50);
+  }
+  sessionStorage.removeItem('booked');
+
+  document.getElementById('booking-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(this).entries());
+    if (!data.notes) delete data.notes;
+    if (!data.pet_breed) delete data.pet_breed;
+    data.master_id = parseInt(data.master_id);
+    data.service_id = parseInt(data.service_id);
+    data.duration_minutes = parseInt(data.duration_minutes);
+    try {
+      const resp = await fetch('/api/appointments/', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data),
+      });
+      const result = await resp.json();
+      const el = document.getElementById('result');
+      if (resp.ok) {
+        const dt = result.start_time.replace('T', ' ');
+        el.innerHTML = '<div class="notify notify-success">Запись создана! ' +
+          result.service_name + ' — ' + dt.slice(0,10) + ' в ' + dt.slice(11,16) +
+          '</div>';
+        sessionStorage.setItem('booked', '1');
+        this.reset();
+        loadBreeds();
+        setTimeout(fillRandom, 300);
+      } else {
+        el.innerHTML = '<div class="notify notify-error">' + (result.detail || JSON.stringify(result)) + '</div>';
+      }
+    } catch(e) {
+      document.getElementById('result').innerHTML = '<div class="notify notify-error">Ошибка соединения</div>';
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,12 @@
+# Timeweb: перенаправление всех запросов на FastAPI через Passenger
+PassengerEnabled On
+PassengerAppRoot /home/username/www/your-domain
+PassengerPython /home/username/.local/bin/python3.11
+PassengerAppType wsgi
+PassengerStartupFile passenger_wsgi.py
+PassengerFriendlyErrorPages off
+
+# Статические файлы
+RewriteEngine On
+RewriteCond %{REQUEST_URI} !^/static/
+RewriteRule ^(.*)$ /app/$1 [QSA,L]

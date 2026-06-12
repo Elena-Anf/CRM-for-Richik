@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Услуги — Grooming CRM{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Услуги</h1>
+
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+  <h2 class="text-lg font-semibold mb-4">Добавить услугу</h2>
+  <form id="service-form" class="grid grid-cols-1 md:grid-cols-5 gap-3">
+    <input type="text" id="sf-name" placeholder="Название" required
+           class="rounded border-gray-300 p-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+    <input type="number" id="sf-price" placeholder="Цена (₽)" required step="0.01" min="0"
+           class="rounded border-gray-300 p-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+    <input type="number" id="sf-cost" placeholder="Себест. (₽)" step="0.01" min="0" value="0"
+           class="rounded border-gray-300 p-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+    <input type="number" id="sf-duration" placeholder="Мин." value="60" min="5"
+           class="rounded border-gray-300 p-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+    <button type="submit" class="bg-indigo-600 text-white px-3 py-2 rounded hover:bg-indigo-700 text-sm">Добавить</button>
+  </form>
+</div>
+
+<div class="bg-white rounded-lg shadow overflow-x-auto">
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Название</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Цена</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Себест.</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Прибыль</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Длит.</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Категория</th>
+        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase"></th>
+      </tr>
+    </thead>
+    <tbody id="services-tbody">
+      {% for s in services %}
+      <tr id="service-row-{{ s.id }}">
+        <td class="px-4 py-3">{{ s.name }}</td>
+        <td class="px-4 py-3">{{ s.price }}₽</td>
+        <td class="px-4 py-3">{{ s.cost_price }}₽</td>
+        <td class="px-4 py-3 text-green-600">{{ s.price - s.cost_price }}₽</td>
+        <td class="px-4 py-3">{{ s.duration_minutes }}мин</td>
+        <td class="px-4 py-3">{{ s.category or '—' }}</td>
+        <td class="px-4 py-3 whitespace-nowrap">
+          <button onclick="editService({{ s.id }})" class="text-indigo-600 hover:text-indigo-800 text-sm mr-2">✎</button>
+          <button onclick="deleteService({{ s.id }})" class="text-red-600 hover:text-red-800 text-sm">✕</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Edit modal -->
+<div id="edit-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50" onclick="if(event.target===this)closeModal()">
+  <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-4" onclick="event.stopPropagation()">
+    <h2 class="text-lg font-semibold mb-4">Редактировать услугу</h2>
+    <form id="edit-form" class="space-y-3">
+      <input type="hidden" id="edit-id">
+      <div>
+        <label class="text-xs text-gray-500">Название</label>
+        <input type="text" id="edit-name" required class="w-full rounded border-gray-300 p-2 text-sm">
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-500">Цена (₽)</label>
+          <input type="number" id="edit-price" step="0.01" min="0" class="w-full rounded border-gray-300 p-2 text-sm">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Себестоимость (₽)</label>
+          <input type="number" id="edit-cost" step="0.01" min="0" class="w-full rounded border-gray-300 p-2 text-sm">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs text-gray-500">Длительность (мин)</label>
+          <input type="number" id="edit-duration" min="1" class="w-full rounded border-gray-300 p-2 text-sm">
+        </div>
+        <div>
+          <label class="text-xs text-gray-500">Категория</label>
+          <input type="text" id="edit-category" class="w-full rounded border-gray-300 p-2 text-sm">
+        </div>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 text-sm">Сохранить</button>
+        <button type="button" onclick="closeModal()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300 text-sm">Отмена</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  async function loadServices() {
+    const resp = await fetch('/api/services/');
+    const data = await resp.json();
+    document.getElementById('services-tbody').innerHTML = data.map(s => `
+      <tr id="service-row-${s.id}">
+        <td class="px-4 py-3">${s.name}</td>
+        <td class="px-4 py-3">${s.price}₽</td>
+        <td class="px-4 py-3">${s.cost_price}₽</td>
+        <td class="px-4 py-3 text-green-600">${s.price - s.cost_price}₽</td>
+        <td class="px-4 py-3">${s.duration_minutes}мин</td>
+        <td class="px-4 py-3">${s.category || '—'}</td>
+        <td class="px-4 py-3 whitespace-nowrap">
+          <button onclick="editService(${s.id})" class="text-indigo-600 hover:text-indigo-800 text-sm mr-2">✎</button>
+          <button onclick="deleteService(${s.id})" class="text-red-600 hover:text-red-800 text-sm">✕</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('service-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    await fetch('/api/services/', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+      name: document.getElementById('sf-name').value,
+      price: parseFloat(document.getElementById('sf-price').value) || 0,
+      cost_price: parseFloat(document.getElementById('sf-cost').value) || 0,
+      duration_minutes: parseInt(document.getElementById('sf-duration').value) || 60,
+      category: '', description: '',
+    })});
+    this.reset(); document.getElementById('sf-duration').value = '60'; await loadServices();
+  });
+
+  async function deleteService(id) {
+    if (!confirm('Удалить услугу?')) return;
+    await fetch('/api/services/' + id, { method: 'DELETE' });
+    document.getElementById('service-row-' + id).remove();
+  }
+
+  function closeModal() { document.getElementById('edit-modal').classList.add('hidden'); }
+
+  async function editService(id) {
+    const resp = await fetch('/api/services/' + id);
+    const s = await resp.json();
+    document.getElementById('edit-id').value = s.id;
+    document.getElementById('edit-name').value = s.name;
+    document.getElementById('edit-price').value = s.price;
+    document.getElementById('edit-cost').value = s.cost_price;
+    document.getElementById('edit-duration').value = s.duration_minutes;
+    document.getElementById('edit-category').value = s.category || '';
+    document.getElementById('edit-modal').classList.remove('hidden');
+  }
+
+  document.getElementById('edit-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-id').value;
+    await fetch('/api/services/' + id, { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+      name: document.getElementById('edit-name').value,
+      price: parseFloat(document.getElementById('edit-price').value) || 0,
+      cost_price: parseFloat(document.getElementById('edit-cost').value) || 0,
+      duration_minutes: parseInt(document.getElementById('edit-duration').value) || 60,
+      category: document.getElementById('edit-category').value || '',
+    })});
+    closeModal(); await loadServices();
+  });
+</script>
+{% endblock %}

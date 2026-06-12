@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}Мастера — Grooming CRM{% endblock %}
+{% block content %}
+<h1>Мастера</h1>
+
+<div class="card mb-6">
+  <div class="card-header">Добавить мастера</div>
+  <div class="card-body">
+    <form id="master-form">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+        <input type="text" id="mf-name" placeholder="Имя" required>
+        <input type="tel" id="mf-phone" placeholder="Телефон">
+        <input type="number" id="mf-percent" placeholder="% от услуги" value="40" step="0.1" min="0" max="100">
+        <input type="color" id="mf-color" value="#4F46E5" style="height:2.4rem;padding:0.25rem;border-radius:0.55rem;border:1.5px solid #e7e5e4;cursor:pointer;">
+      </div>
+      <div class="grid grid-cols-1 gap-3 mb-3">
+        <input type="text" id="mf-calendar" placeholder="ID календаря Google (xxx@group.calendar.google.com)">
+        <textarea id="mf-iframe" rows="2" placeholder="iframe календаря для страницы Расписание">&lt;iframe src=&quot;https://calendar.google.com/...&quot;&gt;&lt;/iframe&gt;</textarea>
+        <textarea id="mf-bio" rows="2" placeholder="Описание / био"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary">Добавить</button>
+    </form>
+  </div>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Имя</th>
+        <th>Телефон</th>
+        <th>%</th>
+        <th>Цвет</th>
+        <th>Google Календарь</th>
+        <th>Расписание</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="masters-tbody">
+      {% for m in masters %}
+      <tr id="master-row-{{ m.id }}">
+        <td>
+          <span class="inline-block w-3 h-3 rounded-full mr-2" style="background:{{ m.color }}"></span>
+          {{ m.name }}
+        </td>
+        <td>{{ m.phone or '—' }}</td>
+        <td>{{ m.commission_percent }}%</td>
+        <td><span class="inline-block w-5 h-5 rounded border" style="background:{{ m.color }}"></span></td>
+        <td>
+          {% if m.google_calendar_id %}
+            <span class="badge badge-completed">✓</span>
+            <a href="https://calendar.google.com/calendar/embed?src={{ m.google_calendar_id | urlencode }}" target="_blank" class="text-xs" style="color:#8b5cf6;">открыть</a>
+          {% else %}
+            <span class="badge badge-pending">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if m.calendar_iframe %}
+            <span class="badge badge-completed">✓</span>
+          {% else %}
+            <span class="badge badge-pending">—</span>
+          {% endif %}
+        </td>
+        <td class="whitespace-nowrap">
+          <button onclick="editMaster({{ m.id }})" class="btn-icon edit">✎</button>
+          <button onclick="deleteMaster({{ m.id }})" class="btn-icon delete">✕</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card mb-6">
+  <div class="card-header">Все — общий календарь</div>
+  <div class="card-body">
+    <textarea id="all-iframe" rows="4" style="width:100%;font-family:inherit;font-size:0.85rem;padding:0.5rem 0.7rem;border:1.5px solid #e7e5e4;border-radius:0.55rem;outline:none;resize:vertical;margin-bottom:0.5rem;" placeholder="<iframe src=&quot;https://calendar.google.com/...&quot;></iframe>"></textarea>
+    <button onclick="saveAllIframe()" class="btn btn-primary" style="padding:0.45rem 1.2rem;font-size:0.85rem;">Сохранить</button>
+    <span id="all-saved" style="display:none;color:#059669;font-size:0.85rem;margin-left:0.5rem;">✓ сохранено</span>
+  </div>
+</div>
+
+<!-- Edit modal -->
+<div id="edit-modal" class="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <h2>Редактировать мастера</h2>
+    <form id="edit-form">
+      <input type="hidden" id="edit-id">
+      <div class="mb-4">
+        <label>Имя</label>
+        <input type="text" id="edit-name" required>
+      </div>
+      <div class="mb-4">
+        <label>Телефон</label>
+        <input type="text" id="edit-phone">
+      </div>
+      <div class="grid-2 mb-4">
+        <div>
+          <label>% от услуги</label>
+          <input type="number" id="edit-percent" step="0.1" min="0" max="100">
+        </div>
+        <div>
+          <label>Цвет</label>
+          <input type="color" id="edit-color" class="w-full h-9 rounded-md border">
+        </div>
+      </div>
+      <div class="mb-4">
+        <label>ID календаря Google</label>
+        <input type="text" id="edit-calendar" placeholder="xxx@group.calendar.google.com">
+      </div>
+      <div class="mb-4">
+        <label>Расписание — добавь iframe календаря</label>
+        <textarea id="edit-iframe" rows="3" placeholder="<iframe src=&quot;https://calendar.google.com/...&quot;></iframe>"></textarea>
+      </div>
+      <div class="mb-4">
+        <label>Описание</label>
+        <textarea id="edit-bio" rows="2"></textarea>
+      </div>
+      <div class="flex gap-2">
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+        <button type="button" onclick="closeModal()" class="btn btn-secondary">Отмена</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  async function loadAllIframe() {
+    const resp = await fetch('/api/settings/all_calendar_iframe');
+    const d = await resp.json();
+    document.getElementById('all-iframe').value = d.value || '';
+  }
+  loadAllIframe();
+
+  async function saveAllIframe() {
+    const val = document.getElementById('all-iframe').value;
+    await fetch('/api/settings/all_calendar_iframe', { method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({value: val})});
+    document.getElementById('all-saved').style.display = 'inline';
+    setTimeout(() => document.getElementById('all-saved').style.display = 'none', 2000);
+  }
+
+  async function loadMasters() {
+    const resp = await fetch('/api/masters/');
+    const data = await resp.json();
+    document.getElementById('masters-tbody').innerHTML = data.map(m => {
+      const calHtml = m.google_calendar_id
+        ? `<span class="badge badge-completed">✓</span> <a href="https://calendar.google.com/calendar/embed?src=${encodeURIComponent(m.google_calendar_id)}" target="_blank" class="text-xs" style="color:#8b5cf6;">открыть</a>`
+        : `<span class="badge badge-pending">—</span>`;
+      const iframeHtml = m.calendar_iframe
+        ? `<span class="badge badge-completed">✓</span>`
+        : `<span class="badge badge-pending">—</span>`;
+      return `<tr id="master-row-${m.id}">
+        <td><span class="inline-block w-3 h-3 rounded-full mr-2" style="background:${m.color}"></span>${m.name}</td>
+        <td>${m.phone || '—'}</td>
+        <td>${m.commission_percent}%</td>
+        <td><span class="inline-block w-5 h-5 rounded border" style="background:${m.color}"></span></td>
+        <td>${calHtml}</td>
+        <td>${iframeHtml}</td>
+        <td class="whitespace-nowrap">
+          <button onclick="editMaster(${m.id})" class="btn-icon edit">✎</button>
+          <button onclick="deleteMaster(${m.id})" class="btn-icon delete">✕</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  document.getElementById('master-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    await fetch('/api/masters/', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+      name: document.getElementById('mf-name').value,
+      phone: document.getElementById('mf-phone').value || null,
+      commission_percent: parseFloat(document.getElementById('mf-percent').value) || 40,
+      color: document.getElementById('mf-color').value || '#4F46E5',
+      google_calendar_id: document.getElementById('mf-calendar').value || '',
+      calendar_iframe: document.getElementById('mf-iframe').value || '',
+      bio: document.getElementById('mf-bio').value || '',
+    })});
+    this.reset(); document.getElementById('mf-percent').value = '40'; document.getElementById('mf-color').value = '#4F46E5'; await loadMasters();
+  });
+
+  async function deleteMaster(id) {
+    if (!confirm('Удалить мастера?')) return;
+    await fetch('/api/masters/' + id, { method: 'DELETE' });
+    document.getElementById('master-row-' + id).remove();
+  }
+
+  function closeModal() { document.getElementById('edit-modal').classList.remove('active'); }
+
+  async function editMaster(id) {
+    const resp = await fetch('/api/masters/' + id);
+    const m = await resp.json();
+    document.getElementById('edit-id').value = m.id;
+    document.getElementById('edit-name').value = m.name;
+    document.getElementById('edit-phone').value = m.phone || '';
+    document.getElementById('edit-percent').value = m.commission_percent;
+    document.getElementById('edit-color').value = m.color || '#4F46E5';
+    document.getElementById('edit-calendar').value = m.google_calendar_id || '';
+    document.getElementById('edit-iframe').value = m.calendar_iframe || '';
+    document.getElementById('edit-bio').value = m.bio || '';
+    document.getElementById('edit-modal').classList.add('active');
+  }
+
+  document.getElementById('edit-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-id').value;
+    await fetch('/api/masters/' + id, { method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+      name: document.getElementById('edit-name').value,
+      phone: document.getElementById('edit-phone').value || null,
+      commission_percent: parseFloat(document.getElementById('edit-percent').value) || 40,
+      color: document.getElementById('edit-color').value,
+      google_calendar_id: document.getElementById('edit-calendar').value || '',
+      calendar_iframe: document.getElementById('edit-iframe').value || '',
+      bio: document.getElementById('edit-bio').value || '',
+    })});
+    closeModal(); await loadMasters();
+  });
+</script>
+{% endblock %}

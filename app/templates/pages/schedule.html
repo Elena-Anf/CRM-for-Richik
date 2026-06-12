@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Расписание — Grooming CRM{% endblock %}
+{% block head %}
+<style>
+  .tab-bar {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    padding: 0.5rem 1.2rem;
+    border-radius: 0.65rem 0.65rem 0 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: transparent;
+    color: #78716c;
+  }
+  .tab-btn:hover {
+    background: rgba(167,139,250,0.08);
+    color: #7c3aed;
+  }
+  .tab-btn.active {
+    background: rgba(255,255,255,0.9);
+    border-color: rgba(226,232,240,0.5);
+    border-bottom-color: transparent;
+    color: #7c3aed;
+  }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  .no-calendar {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #a8a29e;
+    font-size: 0.95rem;
+  }
+  .no-calendar span {
+    display: block;
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+  }
+</style>
+{% endblock %}
+{% block content %}
+<h1>Расписание</h1>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('all')">Все</button>
+  {% for m in masters %}
+  <button class="tab-btn" onclick="switchTab('{{ m.id }}')">{{ m.name }}</button>
+  {% endfor %}
+</div>
+
+<div id="tab-all" class="tab-content active">
+  <div id="all-calendar-wrap" class="table-wrap" style="padding:1rem;text-align:center;">
+    <p style="color:#a8a29e;">Загрузка...</p>
+  </div>
+</div>
+
+{% for m in masters %}
+<div id="tab-{{ m.id }}" class="tab-content">
+  {% if m.calendar_iframe %}
+    <div class="table-wrap" style="padding:1rem;text-align:center;">
+      {{ m.calendar_iframe | safe }}
+    </div>
+  {% else %}
+    <div class="no-calendar">
+      <span>📅</span>
+      Надо сначала добавить календарь<br>
+      <a href="/admin/masters" style="color:#8b5cf6;font-size:0.85rem;">Редактировать мастера</a>
+    </div>
+  {% endif %}
+</div>
+{% endfor %}
+
+<script>
+  fetch('/api/settings/all_calendar_iframe').then(r=>r.json()).then(d => {
+    if (d.value) {
+      document.getElementById('all-calendar-wrap').innerHTML = d.value;
+    } else {
+      document.getElementById('all-calendar-wrap').innerHTML = '<div class="no-calendar"><span>📅</span>Календарь «Все» не настроен<br><a href="/admin/masters" style="color:#8b5cf6;font-size:0.85rem;">Настроить в Мастерах</a></div>';
+    }
+  });
+
+  function switchTab(id) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('tab-' + id).classList.add('active');
+  }
+</script>
+{% endblock %}

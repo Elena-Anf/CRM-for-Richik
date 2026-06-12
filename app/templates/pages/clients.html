@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Клиенты — Grooming CRM{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Клиенты</h1>
+
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+  <h2 class="text-lg font-semibold mb-4">Добавить клиента</h2>
+  <form id="client-form" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <input type="text" id="cf-name" placeholder="Имя клиента" required
+           class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+    <input type="tel" id="cf-phone" placeholder="Телефон" required
+           class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+    <input type="email" id="cf-email" placeholder="Email"
+           class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+    <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">Добавить</button>
+  </form>
+</div>
+
+<div class="bg-white rounded-lg shadow overflow-hidden">
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Имя</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Телефон</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Питомцы</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase"></th>
+      </tr>
+    </thead>
+    <tbody id="clients-tbody">
+      {% for c in clients %}
+      <tr id="client-row-{{ c.id }}">
+        <td class="px-6 py-4">{{ c.name }}</td>
+        <td class="px-6 py-4">{{ c.phone }}</td>
+        <td class="px-6 py-4"><span class="text-gray-400" id="pets-count-{{ c.id }}">...</span></td>
+        <td class="px-6 py-4">
+          <button onclick="deleteClient({{ c.id }})" class="text-red-600 hover:text-red-800">✕</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  async function loadPets() {
+    const rows = document.querySelectorAll('[id^="pets-count-"]');
+    for (const el of rows) {
+      const id = el.id.replace('pets-count-', '');
+      try {
+        const resp = await fetch('/api/clients/' + id + '/pets');
+        const pets = await resp.json();
+        el.textContent = pets.map(p => p.name).join(', ') || '—';
+      } catch {}
+    }
+  }
+  loadPets();
+
+  document.getElementById('client-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const body = {
+      name: document.getElementById('cf-name').value,
+      phone: document.getElementById('cf-phone').value,
+      email: document.getElementById('cf-email').value || null,
+    };
+    await fetch('/api/clients/', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) });
+    this.reset();
+    location.reload();
+  });
+
+  async function deleteClient(id) {
+    if (!confirm('Удалить клиента?')) return;
+    await fetch('/api/clients/' + id, { method: 'DELETE' });
+    document.getElementById('client-row-' + id).remove();
+  }
+</script>
+{% endblock %}

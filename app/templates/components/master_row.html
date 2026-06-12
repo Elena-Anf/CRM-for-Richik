@@ -1,0 +1,11 @@
+{% for m in masters %}
+<tr>
+  <td class="px-6 py-4">
+    <span class="inline-block w-3 h-3 rounded-full mr-2" style="background: {{ m.color }}"></span>
+    {{ m.name }}
+  </td>
+  <td class="px-6 py-4">{{ m.phone or '—' }}</td>
+  <td class="px-6 py-4">{{ m.commission_percent }}%</td>
+  <td class="px-6 py-4">{{ 'Активен' if m.is_active else 'Неактивен' }}</td>
+</tr>
+{% endfor %}

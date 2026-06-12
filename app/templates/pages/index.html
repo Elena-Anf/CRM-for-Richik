@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Главная — Grooming CRM{% endblock %}
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+  <div class="bg-white rounded-lg shadow p-6">
+    <div class="text-3xl font-bold text-indigo-600">{{ stats.masters }}</div>
+    <div class="text-gray-500">Мастера</div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-6">
+    <div class="text-3xl font-bold text-indigo-600">{{ stats.services }}</div>
+    <div class="text-gray-500">Услуги</div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-6">
+    <div class="text-3xl font-bold text-indigo-600">{{ stats.clients }}</div>
+    <div class="text-gray-500">Клиенты</div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-6">
+    <div class="text-3xl font-bold text-indigo-600">{{ stats.appointments_today }}</div>
+    <div class="text-gray-500">Записей сегодня</div>
+  </div>
+</div>
+
+<div class="bg-white rounded-lg shadow p-6">
+  <h2 class="text-lg font-semibold mb-4">Запись на груминг</h2>
+  <p class="text-gray-500">Клиенты могут записаться онлайн. Записи синхронизируются с Google Calendar.</p>
+  <a href="/booking" class="mt-4 inline-block bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">
+    Записаться
+  </a>
+</div>
+
+<div class="bg-white rounded-lg shadow p-6 mt-6">
+  <h2 class="text-lg font-semibold mb-4">Финансы</h2>
+  <div id="finance-summary"
+       hx-get="/api/appointments/finance/stats"
+       hx-trigger="load"
+       class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="p-4 bg-gray-50 rounded-lg">Загрузка...</div>
+  </div>
+</div>
+{% endblock %}
