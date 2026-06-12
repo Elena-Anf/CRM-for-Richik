@@ -1,23 +1,25 @@
-<div class="bg-white rounded-lg shadow p-4">
-  <div class="text-xs text-gray-400 uppercase font-semibold">Ожидается</div>
-  <div class="text-2xl font-bold text-yellow-600">{{ expected.revenue }}₽</div>
-  <div class="text-xs text-gray-500">{{ expected.count }} записей</div>
-  <div class="text-xs">Прибыль: <span class="text-green-600">{{ expected.profit }}₽</span></div>
-</div>
-<div class="bg-white rounded-lg shadow p-4">
-  <div class="text-xs text-gray-400 uppercase font-semibold">Оплачено</div>
-  <div class="text-2xl font-bold text-green-600">{{ paid.revenue }}₽</div>
-  <div class="text-xs text-gray-500">{{ paid.count }} записей</div>
-  <div class="text-xs">Прибыль: <span class="text-green-600">{{ paid.profit }}₽</span></div>
-</div>
-<div class="bg-white rounded-lg shadow p-4">
-  <div class="text-xs text-gray-400 uppercase font-semibold">Отменено</div>
-  <div class="text-2xl font-bold text-red-500">{{ cancelled.revenue }}₽</div>
-  <div class="text-xs text-gray-500">{{ cancelled.count }} записей</div>
-</div>
-<div class="bg-white rounded-lg shadow p-4">
-  <div class="text-xs text-gray-400 uppercase font-semibold">Итого (активные)</div>
-  <div class="text-2xl font-bold text-indigo-600">{{ total_revenue }}₽</div>
-  <div class="text-xs text-gray-500">Выручка: {{ total_revenue }}₽</div>
-  <div class="text-xs">Прибыль: <span class="text-green-600">{{ total_profit }}₽</span></div>
+<div class="grid-4">
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs text-gray-400 uppercase font-semibold">Ожидается</div>
+    <div class="text-2xl font-bold text-yellow-600">{{ expected.revenue }}₽</div>
+    <div class="text-xs text-gray-500">{{ expected.count }} записей</div>
+    <div class="text-xs">Прибыль: <span class="text-green-600">{{ expected.profit }}₽</span></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs text-gray-400 uppercase font-semibold">Оплачено</div>
+    <div class="text-2xl font-bold text-green-600">{{ paid.revenue }}₽</div>
+    <div class="text-xs text-gray-500">{{ paid.count }} записей</div>
+    <div class="text-xs">Прибыль: <span class="text-green-600">{{ paid.profit }}₽</span></div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs text-gray-400 uppercase font-semibold">Отменено</div>
+    <div class="text-2xl font-bold text-red-500">{{ cancelled.revenue }}₽</div>
+    <div class="text-xs text-gray-500">{{ cancelled.count }} записей</div>
+  </div>
+  <div class="bg-white rounded-lg shadow p-4">
+    <div class="text-xs text-gray-400 uppercase font-semibold">Итого (активные)</div>
+    <div class="text-2xl font-bold text-indigo-600">{{ total_revenue }}₽</div>
+    <div class="text-xs text-gray-500">Выручка: {{ total_revenue }}₽</div>
+    <div class="text-xs">Прибыль: <span class="text-green-600">{{ total_profit }}₽</span></div>
+  </div>
 </div>
